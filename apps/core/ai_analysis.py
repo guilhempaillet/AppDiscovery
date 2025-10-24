@@ -61,7 +61,7 @@ def analyze_app(app_id: int) -> Dict[str, Any]:
         "store_app_id": app.store_app_id,
         "review_count": len(reviews),
         "reviews_sample": [
-            {"rating": r.rating, "text": r.text[:200]}
+            {"rating": r.rating, "text": (r.body_raw or '')[:200]}
             for r in reviews[:10]
         ]
     }
@@ -108,9 +108,11 @@ Return JSON:
 }}"""
 
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+        # Use POST with JSON body, avoid key in URL
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
         response = requests.post(
             url,
+            params={"key": api_key},
             json={"contents": [{"parts": [{"text": prompt}]}]},
             timeout=10
         )
@@ -128,10 +130,11 @@ Return JSON:
         return json.loads(text.strip())
 
     except Exception as e:
-        logger.error(f"Gemini API error: {e}")
+        # Log error without exposing API details
+        logger.exception("Gemini API request failed")
         return {
             "mrr_estimate": "Error",
-            "mrr_reasoning": str(e),
+            "mrr_reasoning": "AI analysis temporarily unavailable",
             "difficulty": "Unknown",
             "difficulty_factors": [],
             "review_summary": []
@@ -188,8 +191,8 @@ Keep it concise."""
         }
 
     except Exception as e:
-        logger.error(f"Perplexity API error: {e}")
+        logger.exception("Perplexity API request failed")
         return {
             "market_viability": 0,
-            "market_insights": f"Error: {str(e)}"
+            "market_insights": "Market analysis temporarily unavailable"
         }

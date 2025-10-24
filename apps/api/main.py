@@ -2,13 +2,16 @@
 FastAPI application for AppDiscovery REST API.
 """
 import json
+import logging
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import select
+from sqlmodel import select, func
 
 from apps.core.db import get_session
 from apps.core.models import App, AppLocale, Evidence, Review, Store
@@ -21,12 +24,12 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Enable CORS for web dashboard
+# Enable CORS for web dashboard (localhost only for dev)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=False,  # Not needed without authentication
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -110,10 +113,10 @@ def list_apps(
                 except json.JSONDecodeError:
                     pass
 
-            # Get review count
-            review_count = len(session.exec(
-                select(Review).where(Review.app_id == app.id)
-            ).all())
+            # Get review count efficiently
+            review_count = session.exec(
+                select(func.count()).select_from(Review).where(Review.app_id == app.id)
+            ).one()
 
             results.append({
                 "id": app.id,
@@ -197,7 +200,9 @@ def get_app_detail(app_id: int):
                 }
                 for loc in locales
             ],
-            "review_count": len(review_count),
+            "review_count": session.exec(
+                select(func.count()).select_from(Review).where(Review.app_id == app_id)
+            ).one(),
             "signals": signals,
         }
 
@@ -303,27 +308,29 @@ def get_ai_insights(app_id: int):
             "success": True
         }
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="App not found")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
+        # Log full error server-side, return generic message to client
+        logger.exception(f"AI analysis failed for app {app_id}")
+        raise HTTPException(status_code=500, detail="AI analysis failed. Please try again later.")
 
 
 @app.get("/stats")
 def get_stats():
     """Get overall stats for the platform."""
     with get_session() as session:
-        app_count = len(session.exec(select(App)).all())
-        review_count = len(session.exec(select(Review)).all())
-        evidence_count = len(session.exec(select(Evidence)).all())
+        # Use COUNT queries instead of loading all rows
+        app_count = session.exec(select(func.count()).select_from(App)).one()
+        review_count = session.exec(select(func.count()).select_from(Review)).one()
+        evidence_count = session.exec(select(func.count()).select_from(Evidence)).one()
 
-        stores = session.exec(select(Store)).all()
+        # Get app counts per store efficiently
         store_counts = {}
+        stores = session.exec(select(Store)).all()
         for store in stores:
-            count = len(
-                session.exec(
-                    select(App).where(App.store_id == store.id)
-                ).all()
-            )
+            count = session.exec(
+                select(func.count()).select_from(App).where(App.store_id == store.id)
+            ).one()
             store_counts[store.name] = count
 
         return {
