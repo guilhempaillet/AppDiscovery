@@ -13,6 +13,7 @@ from sqlmodel import select
 from apps.core.db import get_session
 from apps.core.models import App, AppLocale, Evidence, Review, Store
 from apps.core.signals import compute_signals_for_app
+from apps.core.ai_analysis import analyze_app
 
 app = FastAPI(
     title="AppDiscovery API",
@@ -289,6 +290,22 @@ def get_app_signals(app_id: int, recompute: bool = Query(False)):
                 "signals": signals,
                 "computed": "cached",
             }
+
+
+@app.get("/apps/{app_id}/ai-insights")
+def get_ai_insights(app_id: int):
+    """Get AI-powered insights for an app using Gemini and Perplexity."""
+    try:
+        insights = analyze_app(app_id)
+        return {
+            "app_id": app_id,
+            "insights": insights,
+            "success": True
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
 
 @app.get("/stats")

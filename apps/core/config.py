@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # User agent
     user_agent: str = "AppDiscovery/0.1 (Research; +https://github.com/yourusername/appdiscovery)"
 
+    # AI API Keys
+    gemini_api_key: Optional[str] = None
+    perplexity_api_key: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

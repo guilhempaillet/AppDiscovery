@@ -647,6 +647,15 @@
 
                     ${signalsHTML}
 
+                    <div style="margin: 20px 0;">
+                        <button onclick="getAIInsights(${appId})" id="ai-insights-btn"
+                                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;">
+                            🤖 Get AI Insights
+                        </button>
+                    </div>
+
+                    <div id="ai-insights-container"></div>
+
                     <h3 style="margin: 30px 0 15px; color: #333;">Recent Reviews</h3>
                     ${reviewsData.reviews.map(review => `
                         <div class="review-card">
@@ -670,6 +679,83 @@
 
         function closeModal() {
             document.getElementById('app-modal').style.display = 'none';
+        }
+
+        async function getAIInsights(appId) {
+            const container = document.getElementById('ai-insights-container');
+            const btn = document.getElementById('ai-insights-btn');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Analyzing...';
+
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: #667eea;">Analyzing app with AI... This may take a few seconds.</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/apps/${appId}/ai-insights`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const insights = data.insights;
+
+                    container.innerHTML = `
+                        <div style="background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); padding: 25px; border-radius: 15px; margin: 20px 0;">
+                            <h3 style="margin-bottom: 20px; color: #667eea; font-size: 20px;">🤖 AI-Powered Insights</h3>
+
+                            <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px;">
+                                <h4 style="color: #667eea; margin-bottom: 10px;">💰 Revenue Estimate</h4>
+                                <div style="font-size: 24px; font-weight: bold; color: #27ae60; margin-bottom: 10px;">${insights.mrr_estimate}</div>
+                                <p style="color: #666; line-height: 1.6;">${insights.mrr_reasoning}</p>
+                            </div>
+
+                            <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px;">
+                                <h4 style="color: #667eea; margin-bottom: 10px;">🔧 Rebuild Difficulty</h4>
+                                <div style="margin-bottom: 10px;">
+                                    <span style="display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold;
+                                        background: ${insights.difficulty === 'Easy' ? '#27ae60' : insights.difficulty === 'Hard' ? '#e74c3c' : '#f39c12'}; color: white;">
+                                        ${insights.difficulty}
+                                    </span>
+                                </div>
+                                <ul style="margin: 15px 0; padding-left: 20px; color: #666; line-height: 1.8;">
+                                    ${insights.difficulty_factors.map(factor => `<li>${factor}</li>`).join('')}
+                                </ul>
+                            </div>
+
+                            <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px;">
+                                <h4 style="color: #667eea; margin-bottom: 10px;">📝 Review Summary</h4>
+                                <ul style="margin: 10px 0; padding-left: 20px; color: #666; line-height: 1.8;">
+                                    ${insights.review_summary.map(point => `<li>${point}</li>`).join('')}
+                                </ul>
+                            </div>
+
+                            <div style="background: white; padding: 20px; border-radius: 10px;">
+                                <h4 style="color: #667eea; margin-bottom: 10px;">📊 Market Analysis</h4>
+                                <div style="margin-bottom: 10px;">
+                                    <strong>Market Viability:</strong>
+                                    <span style="color: ${insights.market_viability >= 7 ? '#27ae60' : insights.market_viability >= 4 ? '#f39c12' : '#e74c3c'}; font-size: 20px; font-weight: bold;">
+                                        ${insights.market_viability}/10
+                                    </span>
+                                </div>
+                                <p style="color: #666; line-height: 1.6; white-space: pre-wrap;">${insights.market_insights}</p>
+                            </div>
+                        </div>
+                    `;
+
+                    btn.textContent = '✓ Insights Generated';
+                    btn.style.background = '#27ae60';
+                } else {
+                    throw new Error('Analysis failed');
+                }
+            } catch (error) {
+                console.error('AI insights failed:', error);
+                container.innerHTML = `
+                    <div style="background: #fee; padding: 20px; border-radius: 10px; margin: 20px 0; color: #c33;">
+                        <strong>Failed to generate AI insights.</strong><br>
+                        ${error.message || 'Please check your API keys and try again.'}
+                    </div>
+                `;
+                btn.disabled = false;
+                btn.textContent = '🤖 Get AI Insights';
+            }
         }
 
         // Close modal on background click
