@@ -24,7 +24,7 @@ from apps.ingest.fetchers import (
 from apps.ingest.types import ReviewSample
 
 app = typer.Typer(help="AppDiscovery ingest commands")
-console = Console()
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 def setup_logging(level: str = "INFO"):
@@ -157,7 +157,7 @@ def discover(
 
         session.commit()
 
-    console.print(f"[green]✓ Persisted: {new_apps} new apps, {updated_apps} updated[/green]")
+    console.print(f"[green]OK Persisted: {new_apps} new apps, {updated_apps} updated[/green]")
 
 
 @app.command()
@@ -202,30 +202,32 @@ def enrich(
             query = query.where(App.first_seen_at >= since_date)
 
         apps_to_enrich = session.exec(query).all()
+        # Extract the data we need while session is active
+        app_data = [(app.id, app.store_app_id) for app in apps_to_enrich]
 
-    if not apps_to_enrich:
+    if not app_data:
         console.print("[yellow]No apps to enrich[/yellow]")
         return
 
-    console.print(f"[cyan]Enriching {len(apps_to_enrich)} apps...[/cyan]")
+    console.print(f"[cyan]Enriching {len(app_data)} apps...[/cyan]")
 
     settings = get_settings()
     enriched_count = 0
 
-    for app_record in apps_to_enrich:
-        console.print(f"[dim]Processing app {app_record.store_app_id}...[/dim]")
+    for app_id, store_app_id in app_data:
+        console.print(f"[dim]Processing app {store_app_id}...[/dim]")
 
         # Fetch details
-        details = apple_fetch_details(app_record.store_app_id, country=country, lang=lang)
+        details = apple_fetch_details(store_app_id, country=country, lang=lang)
 
         if not details:
-            logger.warning(f"Failed to fetch details for {app_record.store_app_id}")
+            logger.warning(f"Failed to fetch details for {store_app_id}")
             continue
 
         # Update app locale with full description
         with get_session() as session:
             # Re-fetch app in this session
-            app = session.get(App, app_record.id)
+            app = session.get(App, app_id)
 
             locale_key = f"{lang}-{country}"
             locale_record = session.exec(
@@ -257,9 +259,9 @@ def enrich(
         review_count = 0
 
         with get_session() as session:
-            app = session.get(App, app_record.id)
+            app = session.get(App, app_id)
 
-            for review in apple_fetch_reviews(app_record.store_app_id, country=country, page_limit=3):
+            for review in apple_fetch_reviews(store_app_id, country=country, page_limit=3):
                 # Upsert review
                 existing = session.exec(
                     select(Review)
@@ -296,12 +298,12 @@ def enrich(
 
         # Create evidence bundle
         source_urls = [
-            f"{settings.apple_lookup_url}?id={app_record.store_app_id}",
-            f"{settings.apple_reviews_url}/id={app_record.store_app_id}",
+            f"{settings.apple_lookup_url}?id={store_app_id}",
+            f"{settings.apple_reviews_url}/id={store_app_id}",
         ]
 
         with get_session() as session:
-            app = session.get(App, app_record.id)
+            app = session.get(App, app_id)
 
             evidence = Evidence(
                 app_id=app.id,
@@ -329,9 +331,9 @@ def enrich(
                 )
 
         enriched_count += 1
-        console.print(f"[green]✓ Enriched app {app_record.store_app_id} ({review_count} reviews)[/green]")
+        console.print(f"[green]OK Enriched app {store_app_id} ({review_count} reviews)[/green]")
 
-    console.print(f"[green]✓ Enriched {enriched_count} apps total[/green]")
+    console.print(f"[green]OK Enriched {enriched_count} apps total[/green]")
 
     if translate:
         console.print("[yellow]Translation skipped (not implemented)[/yellow]")
@@ -341,7 +343,7 @@ def enrich(
         from apps.core.signals import compute_signals_batch
         with get_session() as session:
             result = compute_signals_batch(session, since=since_date if since else None)
-            console.print(f"[green]✓ Computed signals for {result['signals_computed']} apps[/green]")
+            console.print(f"[green]OK Computed signals for {result['signals_computed']} apps[/green]")
 
 
 @app.command()
@@ -350,7 +352,7 @@ def init():
     setup_logging("INFO")
     console.print("[cyan]Initializing database...[/cyan]")
     init_db()
-    console.print("[green]✓ Database initialized[/green]")
+    console.print("[green]OK Database initialized[/green]")
 
 
 if __name__ == "__main__":

@@ -6,8 +6,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Session, create_engine as sqlmodel_create_engine
 
 from apps.core.config import get_settings
 import apps.core.models  # noqa: F401 - Import to register models with SQLModel
@@ -35,11 +34,8 @@ def get_session_factory():
     """Get or create the session factory."""
     global _SessionLocal
     if _SessionLocal is None:
-        _SessionLocal = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=get_engine(),
-        )
+        from sqlmodel import Session as SQLModelSession
+        _SessionLocal = lambda: SQLModelSession(get_engine())
     return _SessionLocal
 
 
@@ -59,10 +55,10 @@ def get_session() -> Generator[Session, None, None]:
 
     Usage:
         with get_session() as session:
-            results = session.query(App).all()
+            results = session.exec(select(App)).all()
     """
-    SessionLocal = get_session_factory()
-    session = SessionLocal()
+    SessionFactory = get_session_factory()
+    session = SessionFactory()
     try:
         yield session
         session.commit()
