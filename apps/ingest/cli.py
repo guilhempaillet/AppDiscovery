@@ -334,10 +334,14 @@ def enrich(
     console.print(f"[green]✓ Enriched {enriched_count} apps total[/green]")
 
     if translate:
-        console.print("[yellow]Translation not implemented yet (translate_agent)[/yellow]")
+        console.print("[yellow]Translation skipped (not implemented)[/yellow]")
 
     if compute_signals:
-        console.print("[yellow]Signals computation not implemented yet (signals_agent)[/yellow]")
+        console.print("[cyan]Computing signals...[/cyan]")
+        from apps.core.signals import compute_signals_batch
+        with get_session() as session:
+            result = compute_signals_batch(session, since=since_date if since else None)
+            console.print(f"[green]✓ Computed signals for {result['signals_computed']} apps[/green]")
 
 
 @app.command()

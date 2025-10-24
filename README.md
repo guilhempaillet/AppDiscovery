@@ -1,228 +1,251 @@
 # AppDiscovery
 
-Multi-agent app store intelligence platform. Discover, analyze, and understand mobile apps across app stores using retrieval-first, evidence-based workflows.
+> Complete app store intelligence platform with CLI, REST API, and web dashboard
 
-## Overview
+Multi-agent system for discovering, analyzing, and understanding mobile apps across app stores. Built with evidence-first principles—all data is cached, tracked, and linked to sources.
 
-AppDiscovery is designed to help you:
-- **Discover** apps from Apple App Store (and Google Play with compliance checks)
-- **Ingest** app metadata, reviews, and ratings with automatic caching
-- **Translate** content across languages (coming soon via translate_agent)
-- **Compute signals** like review velocity, rating trends (coming soon via signals_agent)
-- **Build evidence bundles** for downstream analysis
+## Features
 
-### Architecture
-
-The system uses a **multi-agent architecture** where specialized agents handle specific tasks:
-
-1. **Ingest Agent** (✅ implemented) - Search, fetch, cache app data
-2. **Translate Agent** (📋 spec ready) - Provider-agnostic translation
-3. **Signals Agent** (📋 spec ready) - Compute traction metrics
-4. **Reviewer Copilot** (🔜 planned) - Draft rationales from evidence
-5. **Docs Agent** (🔜 planned) - Keep documentation in sync
-
-See `prompts/agents.md` for the complete agent registry.
+✅ **Ingest Agent** - Search and fetch Apple App Store metadata + reviews
+✅ **Signals Agent** - Compute traction metrics (review velocity, text density, rating trends)
+✅ **REST API** - FastAPI backend with endpoints for apps, reviews, and signals
+✅ **Web Dashboard** - Beautiful UI for browsing apps and analyzing data
+✅ **HTTP Caching** - SHA256-based caching with rate limiting
+✅ **Evidence Bundles** - All data linked to source URLs with timestamps
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.10+
-- Poetry (recommended) or pip
-
-### Installation
+### 1. Installation
 
 ```bash
-# Clone the repository
+# Clone and install
 git clone https://github.com/yourusername/appdiscovery.git
 cd appdiscovery
 
-# Install dependencies with Poetry
+# Install dependencies
+pip install sqlmodel sqlalchemy pydantic pydantic-settings requests typer rich fastapi uvicorn
+
+# Or with poetry
 poetry install
 
-# Or with pip
-pip install -e .
-
-# Copy environment template
-cp .env.example .env
-
 # Initialize database
-poetry run python -m apps.ingest.cli init
+python -m apps.ingest.cli init
 ```
 
-### Basic Usage
-
-#### 1. Discover apps by search
+### 2. Discover Apps
 
 ```bash
-# Search Apple App Store for budget apps in Spanish (Spain)
-poetry run python -m apps.ingest.cli discover \
+# Search Spanish finance apps
+python -m apps.ingest.cli discover \
   --store apple \
   --lang es \
   --country ES \
   --q "gastos" \
   --limit 50
+
+# Japanese budget apps
+python -m apps.ingest.cli discover \
+  --store apple \
+  --lang ja \
+  --country JP \
+  --q "家計簿" \
+  --limit 50
 ```
 
-#### 2. Enrich apps with details and reviews
+### 3. Enrich with Details & Reviews
 
 ```bash
-# Enrich apps discovered since Oct 24
-poetry run python -m apps.ingest.cli enrich \
+# Enrich apps discovered today
+python -m apps.ingest.cli enrich \
   --since 2025-10-24 \
-  --country ES \
-  --lang es
+  --country US \
+  --lang en \
+  --compute-signals
 
-# Or enrich specific app IDs
-poetry run python -m apps.ingest.cli enrich \
+# Or enrich specific apps
+python -m apps.ingest.cli enrich \
   --app-ids 300238550 \
-  --app-ids 1010865877
+  --compute-signals
 ```
 
-#### 3. View evidence bundles
+### 4. Start the API
 
 ```bash
-# Evidence bundles are saved to data/cache/evidence/{app_id}.json
-cat data/cache/evidence/1.json | jq
+# Start FastAPI server
+python -m apps.api.main
+
+# Or with uvicorn
+uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Runbook
-
-### Discovery Workflow
-
-**Goal:** Find candidate apps in specific markets/languages
+### 5. Open the Dashboard
 
 ```bash
-# Example: Mexican finance apps
-poetry run python -m apps.ingest.cli discover \
+# Open in browser
+open http://localhost:8000/docs  # API documentation
+open web/static/index.html      # Dashboard (or serve with any HTTP server)
+
+# Serve dashboard with Python
+cd web/static && python -m http.server 3000
+# Then open http://localhost:3000
+```
+
+## Dashboard Preview
+
+The web dashboard provides:
+- **Real-time stats** - Total apps, reviews, evidence bundles
+- **App browsing** - Filter by store, category with beautiful cards
+- **Detailed views** - Full app info, descriptions, signals, recent reviews
+- **Traction metrics** - Review windows (7d/30d), rating velocity, text density
+
+## REST API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | API info and endpoint list |
+| `GET /stats` | Platform statistics |
+| `GET /stores` | List all app stores |
+| `GET /apps` | List apps with filters |
+| `GET /apps/{id}` | Get app details |
+| `GET /apps/{id}/reviews` | Get app reviews |
+| `GET /apps/{id}/signals` | Get/compute signals |
+
+### Example API Calls
+
+```bash
+# Get stats
+curl http://localhost:8000/stats | jq
+
+# List apps
+curl "http://localhost:8000/apps?store=apple&limit=10" | jq
+
+# Get app details
+curl http://localhost:8000/apps/1 | jq
+
+# Compute signals
+curl "http://localhost:8000/apps/1/signals?recompute=true" | jq
+```
+
+## CLI Commands
+
+### discover
+
+Search app stores and persist metadata.
+
+```bash
+python -m apps.ingest.cli discover \
   --store apple \
   --lang es \
   --country MX \
   --q "finanzas" \
   --limit 100
-
-poetry run python -m apps.ingest.cli discover \
-  --store apple \
-  --lang es \
-  --country MX \
-  --q "presupuesto" \
-  --limit 100
-
-# Japanese finance apps
-poetry run python -m apps.ingest.cli discover \
-  --store apple \
-  --lang ja \
-  --country JP \
-  --q "家計簿" \
-  --limit 100
 ```
 
-**Output:** Apps are persisted to database with:
-- Core app record (store, store_app_id, bundle_id)
-- Locale-specific metadata (title, description in original language)
-- Daily snapshot (rating count, avg rating)
+**Options:**
+- `--store`: Store to search (currently only `apple`)
+- `--lang`: Language code (e.g., `es`, `ja`, `pt`)
+- `--country`: Country code (e.g., `ES`, `MX`, `JP`)
+- `--q`: Search query (required)
+- `--limit`: Max results per query (default: 50)
 
-### Enrichment Workflow
+### enrich
 
-**Goal:** Get full details, descriptions, and recent reviews
+Fetch full details, descriptions, and reviews.
 
 ```bash
-# Enrich all apps discovered in last week
-poetry run python -m apps.ingest.cli enrich \
-  --since $(date -d '7 days ago' +%Y-%m-%d) \
-  --country US \
-  --lang en
-
-# Enrich with Spanish locale
-poetry run python -m apps.ingest.cli enrich \
+python -m apps.ingest.cli enrich \
   --since 2025-10-24 \
-  --country ES \
-  --lang es
+  --country US \
+  --lang en \
+  --compute-signals
 ```
 
-**Output:**
-- Updated app_locales with full description
-- Reviews (up to 3 pages, ~150 reviews per app)
-- Evidence bundle JSON with source URLs and review samples
+**Options:**
+- `--since`: Enrich apps seen since date (YYYY-MM-DD)
+- `--app-ids`: Specific app IDs to enrich (can specify multiple)
+- `--country`: Country for details/reviews (default: US)
+- `--lang`: Language for details/reviews (default: en)
+- `--compute-signals`: Compute traction metrics (default: false)
 
-### Testing
+### init
+
+Initialize the database schema.
 
 ```bash
-# Run all tests (skips smoke tests by default)
-poetry run pytest
-
-# Run smoke tests (hits real APIs but uses cache)
-RUN_SMOKE_TESTS=true poetry run pytest apps/ingest/tests/test_ingest_smoke.py -v
-
-# Run with coverage
-poetry run pytest --cov=apps --cov-report=html
+python -m apps.ingest.cli init
 ```
 
-### Database
+## Architecture
 
-The system uses SQLite by default (`data/appdiscovery.db`). For production, switch to PostgreSQL:
+### Multi-Agent Design
 
-```bash
-# In .env
-DATABASE_URL=postgresql://user:pass@localhost/appdiscovery
+Each agent is specialized with clear boundaries:
 
-# Run migrations manually (or use SQLModel's create_all for dev)
-sqlite3 data/appdiscovery.db < infra/migrations/0001_init.sql
+1. **Ingest Agent** (`apps/ingest/`)
+   - Search, fetch, cache app data
+   - Idempotent upserts by (store_id, store_app_id)
+   - Rate limiting: 2 req/s default
+
+2. **Signals Agent** (`apps/core/signals.py`)
+   - Compute review windows (7d, 30d)
+   - Rating velocity (day-over-day)
+   - Text density (description length)
+
+3. **API Layer** (`apps/api/`)
+   - FastAPI REST endpoints
+   - JSON responses with CORS support
+   - Swagger docs at `/docs`
+
+4. **Web Dashboard** (`web/static/`)
+   - Vanilla HTML/CSS/JS (no frameworks)
+   - Responsive design
+   - Real-time API integration
+
+### Data Flow
+
+```
+CLI discover → Search API → Cache → Database (apps, app_locales, daily_snapshots)
+                                ↓
+CLI enrich → Details API → Cache → Database (reviews, evidence)
+                                ↓
+Signals Agent → Compute metrics → Store in evidence.lang_detect
+                                ↓
+API → Query database → JSON responses
+                                ↓
+Dashboard → Fetch API → Display UI
 ```
 
-**Schema:** See `apps/core/models.py` or `infra/migrations/0001_init.sql`
+### Database Schema
 
-Tables:
-- `stores` - App store metadata
-- `apps` - Core app records (unique per store + store_app_id)
-- `app_locales` - Localized titles, descriptions (raw + translated)
-- `reviews` - Individual reviews (raw + translated)
+**Tables:**
+- `stores` - App store metadata (apple, google_play)
+- `apps` - Core app records
+- `app_locales` - Localized titles/descriptions
+- `reviews` - Individual reviews
 - `daily_snapshots` - Daily rating aggregates
 - `evidence` - Evidence bundles with source URLs
 
-### Caching
+See `docs/data_model.md` for details.
 
-All HTTP requests are cached to `data/cache/` using SHA256 keys:
-- Cache TTL: 24 hours (configurable via `CACHE_TTL_SECONDS`)
-- Cache structure: `data/cache/{first_2_chars}/{sha256}.json`
-- Rate limiting: 2 req/s per host (configurable)
+## Configuration
 
-To force refresh:
+Copy `.env.example` to `.env` and customize:
+
 ```bash
-# Clear cache for a fresh fetch
-rm -rf data/cache/*
-```
+# Database
+DATABASE_URL=sqlite:///./data/appdiscovery.db
 
-### Evidence Bundles
+# Cache
+CACHE_DIR=./data/cache
+CACHE_TTL_SECONDS=86400
 
-Evidence bundles are JSON files containing:
-- `app_id` - Internal app ID
-- `store_app_id` - Platform-specific ID
-- `source_urls` - List of API endpoints used
-- `review_samples` - Up to 10 recent reviews with rating, date, body
-- `fetched_at` - Timestamp
+# Rate limiting
+RATE_LIMIT_REQUESTS_PER_SECOND=2.0
+RATE_LIMIT_BURST=5
 
-Location: `data/cache/evidence/{app_id}.json`
-
-Example:
-```json
-{
-  "app_id": 1,
-  "store_app_id": "300238550",
-  "source_urls": [
-    "https://itunes.apple.com/lookup?id=300238550",
-    "https://itunes.apple.com/rss/customerreviews/id=300238550"
-  ],
-  "review_samples": [
-    {
-      "rating": 5,
-      "created_at": "2025-10-20T14:23:00",
-      "body_raw": "Great app for budgeting!",
-      "locale": "en-US"
-    }
-  ],
-  "fetched_at": "2025-10-24T10:30:00"
-}
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
 ```
 
 ## Development
@@ -235,76 +258,184 @@ AppDiscovery/
 │   ├── core/           # Shared infrastructure
 │   │   ├── config.py   # Settings management
 │   │   ├── db.py       # Database session factory
-│   │   └── models.py   # SQLModel ORM models
+│   │   ├── models.py   # SQLModel ORM models
+│   │   └── signals.py  # Traction metrics computation
 │   ├── ingest/         # Ingest agent
 │   │   ├── cli.py      # Typer CLI
 │   │   ├── cache.py    # HTTP cache + rate limiting
 │   │   ├── types.py    # Pydantic types
-│   │   ├── fetchers/   # Store-specific fetchers
-│   │   └── tests/      # Smoke tests
-│   ├── api/            # Future REST API
-│   └── worker/         # Future background jobs
+│   │   └── fetchers/   # Store-specific fetchers
+│   └── api/            # REST API
+│       └── main.py     # FastAPI application
+├── web/
+│   └── static/
+│       └── index.html  # Web dashboard
 ├── prompts/            # Agent specifications
-│   └── agents/         # Individual agent prompts
 ├── docs/               # Documentation
-├── infra/
-│   └── migrations/     # SQL migrations
-└── data/               # Local data (gitignored)
-    ├── cache/          # HTTP cache
-    └── exports/        # Export files
+└── infra/
+    └── migrations/     # SQL migrations
 ```
 
-### Agent Development
+### Running Tests
 
-To implement a new agent (e.g., translate_agent):
+```bash
+# Run all tests (skips smoke tests by default)
+pytest
 
-1. Read the agent spec: `prompts/agents/translate_agent.md`
-2. Create allowed files per spec (e.g., `apps/core/translate.py`)
-3. Follow constraints (provider-agnostic, cache by hash, etc.)
-4. Update `prompts/io_schemas.md` with new schemas
-5. Run tests and provide PR diff
+# Run smoke tests (hits real APIs but uses cache)
+RUN_SMOKE_TESTS=true pytest apps/ingest/tests/test_ingest_smoke.py -v
 
-See `prompts/agents.md` for the vibecoding loop.
+# Run with coverage
+pytest --cov=apps --cov-report=html
+```
 
 ### Global Policies
 
-- **Evidence over opinion** - No invented data, only cached/persisted facts
-- **Respect store TOS** - Use official APIs; gate unofficial methods behind compliance flags
-- **Idempotent by default** - All operations safe to re-run
-- **Cost-aware** - Track token/char usage; cache aggressively
-- **No PII** - Only public display names from reviews
-- **Security** - No secrets in code; use environment variables
+All operations follow these principles:
 
-## Future Work
+- **Evidence over opinion** - No invented data
+- **Respect store TOS** - Official APIs only
+- **Idempotent by default** - Safe to re-run
+- **Cost-aware** - Aggressive caching
+- **No PII** - Only public review names
+- **Security** - No secrets in code
 
-### Translate Agent (Week 2)
-- Provider-agnostic translation (DeepL, OpenAI, etc.)
-- Hash-based deduplication
-- Chunking for long descriptions
-- See `prompts/agents/translate_agent.md`
+See `prompts/policies.md` for details.
 
-### Signals Agent (Week 2)
-- Compute review_7d, review_30d windows
-- Rating velocity (day-over-day changes)
-- Text density metrics
-- See `prompts/agents/signals_agent.md`
+## Use Cases
 
-### Google Play Support
-- Currently gated behind `compliance_ok` flag
-- Requires careful rate limiting and user agent
-- See `prompts/agents/ingest_agent.md` for constraints
+### 1. Market Research
+
+Discover trending apps in specific locales/categories:
+
+```bash
+# Mexican fintech apps
+python -m apps.ingest.cli discover --lang es --country MX --q "finanzas" --limit 200
+python -m apps.ingest.cli enrich --since 2025-10-24 --compute-signals
+
+# View in dashboard
+open http://localhost:3000
+```
+
+### 2. Competitive Analysis
+
+Track rating velocity and review sentiment:
+
+```bash
+# Enrich competitor apps
+python -m apps.ingest.cli enrich --app-ids 123456789 --app-ids 987654321 --compute-signals
+
+# Query signals via API
+curl "http://localhost:8000/apps/1/signals" | jq '.signals'
+```
+
+### 3. Localization Research
+
+Analyze app descriptions across languages:
+
+```bash
+# Fetch multiple locales
+python -m apps.ingest.cli enrich --since 2025-10-24 --country ES --lang es
+python -m apps.ingest.cli enrich --since 2025-10-24 --country JP --lang ja
+
+# Compare via API
+curl "http://localhost:8000/apps/1" | jq '.locales'
+```
+
+## Signals Explained
+
+### Review Windows
+
+- **review_7d**: Number of reviews in past 7 days
+- **review_30d**: Number of reviews in past 30 days
+
+Indicates recent user engagement and app activity.
+
+### Rating Velocity
+
+- **rating_velocity_d1**: Day-over-day change in total ratings
+
+Positive velocity = growing user base. Requires two consecutive daily snapshots.
+
+### Text Density
+
+- **text_density**: Character count of app description
+
+Longer descriptions may indicate more mature/feature-rich apps. Uses longest non-English description if available.
+
+## Limitations
+
+- **Google Play**: Not implemented (spec ready in `prompts/agents/ingest_agent.md`)
+- **Translation**: Not implemented (spec ready in `prompts/agents/translate_agent.md`)
+- **Real-time monitoring**: Daily/weekly updates recommended, not real-time
+- **App Store Coverage**: Apple only (Google Play requires compliance checks)
+
+## Troubleshooting
+
+### Database errors
+
+```bash
+# Reset database
+rm -f data/appdiscovery.db
+python -m apps.ingest.cli init
+```
+
+### API connection errors
+
+```bash
+# Check if API is running
+curl http://localhost:8000
+
+# Start API with verbose logs
+uvicorn apps.api.main:app --reload --log-level debug
+```
+
+### Cache issues
+
+```bash
+# Clear cache
+rm -rf data/cache/*
+
+# Check cache stats
+ls -lh data/cache/ | wc -l
+```
 
 ## Contributing
 
 1. Follow the agent architecture - each agent owns specific files
 2. Add tests for new functionality
 3. Update `prompts/io_schemas.md` when adding new data structures
-4. Run `black` and `ruff` before committing
+4. Run formatters before committing:
+   ```bash
+   black apps/ --line-length 100
+   ruff check apps/ --fix
+   ```
+
+## Future Work
+
+### Translation Agent (Week 2)
+- Provider-agnostic translation (DeepL, OpenAI)
+- Hash-based deduplication
+- Chunking for long descriptions
+- See `prompts/agents/translate_agent.md`
+
+### Google Play Support
+- Currently gated behind `compliance_ok` flag
+- Requires careful rate limiting and user agent
+- See `prompts/agents/ingest_agent.md`
+
+### Enhanced Dashboard
+- Charts and graphs (signals over time)
+- Bulk export to CSV/JSON
+- Advanced filtering and search
+- User authentication
 
 ## License
 
-MIT (or your preferred license)
+MIT
 
 ---
 
-**Built with Claude Code** - A multi-agent approach to app intelligence
+**Built with Claude Code** 🤖 - A multi-agent approach to app intelligence
+
+[Documentation](docs/) | [API Docs](http://localhost:8000/docs) | [Dashboard](http://localhost:3000)
