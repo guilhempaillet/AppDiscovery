@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
         }
 
@@ -76,6 +76,18 @@
             border-radius: 15px;
             margin-bottom: 20px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .controls-left {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
         }
 
         .controls label {
@@ -88,7 +100,6 @@
             padding: 8px 12px;
             border: 2px solid #ddd;
             border-radius: 8px;
-            margin-right: 15px;
             font-size: 14px;
         }
 
@@ -105,6 +116,22 @@
 
         .controls button:hover {
             background: #764ba2;
+        }
+
+        .view-toggle {
+            display: flex;
+            gap: 10px;
+        }
+
+        .view-toggle button {
+            padding: 10px 15px;
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .view-toggle button.active {
+            background: #667eea;
+            color: white;
         }
 
         .app-grid {
@@ -160,26 +187,92 @@
             color: #1976d2;
         }
 
-        .app-signals {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
+        /* List View Styles */
+        .app-list {
+            display: none;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow-x: auto;
         }
 
-        .signal-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 13px;
+        .app-list.active {
+            display: block;
         }
 
-        .signal-label {
-            color: #999;
+        .app-list table {
+            width: 100%;
+            border-collapse: collapse;
         }
 
-        .signal-value {
+        .app-list th {
+            background: #f9f9f9;
+            padding: 15px;
+            text-align: left;
             font-weight: 600;
-            color: #667eea;
+            color: #333;
+            border-bottom: 2px solid #eee;
+            position: sticky;
+            top: 0;
+        }
+
+        .app-list td {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+        }
+
+        .app-list tr:hover {
+            background: #f9f9f9;
+            cursor: pointer;
+        }
+
+        .app-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            object-fit: cover;
+        }
+
+        .app-icon-placeholder {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .mrr-value {
+            font-weight: 600;
+            color: #2e7d32;
+        }
+
+        .difficulty-badge {
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .difficulty-easy {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .difficulty-medium {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        .difficulty-hard {
+            background: #ffebee;
+            color: #c62828;
         }
 
         .loading {
@@ -273,22 +366,49 @@
         </div>
 
         <div class="controls">
-            <label>Store:</label>
-            <select id="filter-store">
-                <option value="">All</option>
-                <option value="apple">Apple App Store</option>
-                <option value="google_play">Google Play</option>
-            </select>
+            <div class="controls-left">
+                <label>Store:</label>
+                <select id="filter-store">
+                    <option value="">All</option>
+                    <option value="apple">Apple App Store</option>
+                    <option value="google_play">Google Play</option>
+                </select>
 
-            <label>Category:</label>
-            <input type="text" id="filter-category" placeholder="e.g., Finance">
+                <label>Category:</label>
+                <input type="text" id="filter-category" placeholder="e.g., Finance">
 
-            <button onclick="loadApps()">Filter</button>
-            <button onclick="refreshStats()">Refresh Stats</button>
+                <button onclick="loadApps()">Filter</button>
+                <button onclick="refreshStats()">Refresh Stats</button>
+            </div>
+
+            <div class="view-toggle">
+                <button id="grid-view-btn" class="active" onclick="switchView('grid')">Grid View</button>
+                <button id="list-view-btn" onclick="switchView('list')">List View</button>
+            </div>
         </div>
 
         <div class="app-grid" id="app-grid">
             <div class="loading">Loading apps...</div>
+        </div>
+
+        <div class="app-list" id="app-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Icon</th>
+                        <th>App Name</th>
+                        <th>Developer</th>
+                        <th>Language</th>
+                        <th>Est. MRR</th>
+                        <th>Rebuild Difficulty</th>
+                        <th>Category</th>
+                        <th>Reviews</th>
+                    </tr>
+                </thead>
+                <tbody id="app-list-body">
+                    <tr><td colspan="8" class="loading">Loading apps...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
@@ -301,6 +421,63 @@
 
     <script>
         const API_BASE = 'http://localhost:8000';
+        let currentView = 'grid';
+        let appsData = [];
+
+        function switchView(view) {
+            currentView = view;
+            const gridView = document.getElementById('app-grid');
+            const listView = document.getElementById('app-list');
+            const gridBtn = document.getElementById('grid-view-btn');
+            const listBtn = document.getElementById('list-view-btn');
+
+            if (view === 'grid') {
+                gridView.style.display = 'grid';
+                listView.classList.remove('active');
+                gridBtn.classList.add('active');
+                listBtn.classList.remove('active');
+            } else {
+                gridView.style.display = 'none';
+                listView.classList.add('active');
+                gridBtn.classList.remove('active');
+                listBtn.classList.add('active');
+            }
+        }
+
+        function calculateMRR(app) {
+            // Placeholder MRR calculation based on review count and category
+            const baseRate = app.category === 'Finance' ? 50 : 30;
+            const reviewMultiplier = (app.review_count || 0) * 0.5;
+            return Math.round(baseRate + reviewMultiplier);
+        }
+
+        function calculateDifficulty(app) {
+            // Placeholder difficulty based on signals
+            const textDensity = app.signals?.text_density || 0;
+            const reviewCount = app.review_count || 0;
+
+            const score = (textDensity / 100) + (reviewCount / 10);
+
+            if (score < 20) return { level: 'Easy', class: 'difficulty-easy' };
+            if (score < 50) return { level: 'Medium', class: 'difficulty-medium' };
+            return { level: 'Hard', class: 'difficulty-hard' };
+        }
+
+        function getLanguageName(locale) {
+            if (!locale) return 'Unknown';
+            const lang = locale.split('-')[0];
+            const langMap = {
+                'en': 'English',
+                'es': 'Spanish',
+                'ja': 'Japanese',
+                'pt': 'Portuguese',
+                'fr': 'French',
+                'de': 'German',
+                'zh': 'Chinese',
+                'ko': 'Korean',
+            };
+            return langMap[lang] || lang.toUpperCase();
+        }
 
         async function refreshStats() {
             try {
@@ -317,7 +494,10 @@
 
         async function loadApps() {
             const grid = document.getElementById('app-grid');
+            const listBody = document.getElementById('app-list-body');
+
             grid.innerHTML = '<div class="loading">Loading apps...</div>';
+            listBody.innerHTML = '<tr><td colspan="8" class="loading">Loading apps...</td></tr>';
 
             try {
                 const store = document.getElementById('filter-store').value;
@@ -330,19 +510,31 @@
                 const response = await fetch(url);
                 const data = await response.json();
 
+                appsData = data.apps;
+
                 if (data.apps.length === 0) {
                     grid.innerHTML = '<div class="loading">No apps found</div>';
+                    listBody.innerHTML = '<tr><td colspan="8" class="loading">No apps found</td></tr>';
                     return;
                 }
 
+                // Render grid view
                 grid.innerHTML = '';
                 for (const app of data.apps) {
                     const card = createAppCard(app);
                     grid.appendChild(card);
                 }
+
+                // Render list view
+                listBody.innerHTML = '';
+                for (const app of data.apps) {
+                    const row = createAppRow(app);
+                    listBody.appendChild(row);
+                }
             } catch (error) {
                 console.error('Failed to load apps:', error);
                 grid.innerHTML = '<div class="loading">Failed to load apps. Is the API running?</div>';
+                listBody.innerHTML = '<tr><td colspan="8" class="loading">Failed to load apps</td></tr>';
             }
         }
 
@@ -366,6 +558,32 @@
             return card;
         }
 
+        function createAppRow(app) {
+            const row = document.createElement('tr');
+            row.onclick = () => showAppDetails(app.id);
+
+            const mrr = calculateMRR(app);
+            const difficulty = calculateDifficulty(app);
+            const language = getLanguageName(app.locale);
+
+            const iconHtml = app.icon_url
+                ? `<img src="${app.icon_url}" class="app-icon" alt="${app.title}">`
+                : `<div class="app-icon-placeholder">${(app.title || 'A')[0].toUpperCase()}</div>`;
+
+            row.innerHTML = `
+                <td>${iconHtml}</td>
+                <td><strong>${app.title || 'Untitled'}</strong></td>
+                <td>${app.developer || 'Unknown'}</td>
+                <td>${language}</td>
+                <td><span class="mrr-value">$${mrr.toLocaleString()}</span></td>
+                <td><span class="difficulty-badge ${difficulty.class}">${difficulty.level}</span></td>
+                <td>${app.category || 'N/A'}</td>
+                <td>${app.review_count || 0}</td>
+            `;
+
+            return row;
+        }
+
         async function showAppDetails(appId) {
             const modal = document.getElementById('app-modal');
             const modalBody = document.getElementById('modal-body');
@@ -387,21 +605,21 @@
                     signalsHTML = `
                         <div style="background: #f9f9f9; padding: 20px; border-radius: 10px; margin: 20px 0;">
                             <h3 style="margin-bottom: 15px; color: #667eea;">📊 Signals</h3>
-                            <div class="signal-row">
-                                <span class="signal-label">Reviews (7 days):</span>
-                                <span class="signal-value">${app.signals.review_7d || 'N/A'}</span>
+                            <div class="signal-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: #999;">Reviews (7 days):</span>
+                                <span style="font-weight: 600; color: #667eea;">${app.signals.review_7d || 'N/A'}</span>
                             </div>
-                            <div class="signal-row">
-                                <span class="signal-label">Reviews (30 days):</span>
-                                <span class="signal-value">${app.signals.review_30d || 'N/A'}</span>
+                            <div class="signal-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: #999;">Reviews (30 days):</span>
+                                <span style="font-weight: 600; color: #667eea;">${app.signals.review_30d || 'N/A'}</span>
                             </div>
-                            <div class="signal-row">
-                                <span class="signal-label">Rating Velocity (d/d):</span>
-                                <span class="signal-value">${app.signals.rating_velocity_d1 || 'N/A'}</span>
+                            <div class="signal-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: #999;">Rating Velocity (d/d):</span>
+                                <span style="font-weight: 600; color: #667eea;">${app.signals.rating_velocity_d1 || 'N/A'}</span>
                             </div>
-                            <div class="signal-row">
-                                <span class="signal-label">Text Density:</span>
-                                <span class="signal-value">${app.signals.text_density || 'N/A'} chars</span>
+                            <div class="signal-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <span style="color: #999;">Text Density:</span>
+                                <span style="font-weight: 600; color: #667eea;">${app.signals.text_density || 'N/A'} chars</span>
                             </div>
                         </div>
                     `;

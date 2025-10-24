@@ -98,12 +98,14 @@ def discover(
                     bundle_or_package_id=summary.bundle_or_package_id,
                     developer=summary.developer,
                     category=summary.category,
+                    icon_url=summary.icon_url,
                 )
                 session.add(app_record)
                 new_apps += 1
             else:
                 app_record.last_seen_at = datetime.utcnow()
                 app_record.category = summary.category or app_record.category
+                app_record.icon_url = summary.icon_url or app_record.icon_url
                 updated_apps += 1
 
             session.flush()

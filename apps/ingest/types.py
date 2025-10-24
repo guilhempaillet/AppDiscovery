@@ -19,6 +19,7 @@ class StoreAppSummary(BaseModel):
     currency: Optional[str] = None
     rating_avg: Optional[float] = None
     rating_count: Optional[int] = None
+    icon_url: Optional[str] = None  # App icon URL
     locale: str = "en"  # Locale of the search
 
 
@@ -34,6 +35,7 @@ class AppDetails(BaseModel):
     currency: Optional[str] = None
     rating_avg: Optional[float] = None
     rating_count: Optional[int] = None
+    icon_url: Optional[str] = None  # App icon URL
     countries: Optional[List[str]] = None
     locale: str = "en"
     version: Optional[str] = None

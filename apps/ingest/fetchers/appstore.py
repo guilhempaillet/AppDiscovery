@@ -69,6 +69,7 @@ def search_apps(
                 currency=item.get("currency"),
                 rating_avg=item.get("averageUserRating"),
                 rating_count=item.get("userRatingCount"),
+                icon_url=item.get("artworkUrl100") or item.get("artworkUrl60"),
                 locale=f"{lang}-{country}",
             )
             results.append(summary)
@@ -129,6 +130,7 @@ def fetch_details(
             currency=item.get("currency"),
             rating_avg=item.get("averageUserRating"),
             rating_count=item.get("userRatingCount"),
+            icon_url=item.get("artworkUrl100") or item.get("artworkUrl60"),
             countries=[country],
             locale=f"{lang}-{country}",
             version=item.get("version"),

@@ -37,6 +37,7 @@ class App(SQLModel, table=True):
     bundle_or_package_id: Optional[str] = None  # e.g., "com.example.app"
     developer: Optional[str] = None
     category: Optional[str] = None
+    icon_url: Optional[str] = None  # App icon URL (100x100)
     first_seen_at: datetime = Field(default_factory=datetime.utcnow)
     last_seen_at: datetime = Field(default_factory=datetime.utcnow)
 

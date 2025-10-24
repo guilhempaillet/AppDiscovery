@@ -94,6 +94,26 @@ def list_apps(
                 .limit(1)
             ).first()
 
+            # Get signals
+            evidence = session.exec(
+                select(Evidence)
+                .where(Evidence.app_id == app.id)
+                .order_by(Evidence.fetched_at.desc())
+            ).first()
+
+            signals = None
+            if evidence and evidence.lang_detect:
+                try:
+                    lang_detect_data = json.loads(evidence.lang_detect)
+                    signals = lang_detect_data.get("signals")
+                except json.JSONDecodeError:
+                    pass
+
+            # Get review count
+            review_count = len(session.exec(
+                select(Review).where(Review.app_id == app.id)
+            ).all())
+
             results.append({
                 "id": app.id,
                 "store_app_id": app.store_app_id,
@@ -101,8 +121,12 @@ def list_apps(
                 "developer": app.developer,
                 "category": app.category,
                 "title": primary_locale.title_raw if primary_locale else None,
+                "icon_url": app.icon_url,
+                "locale": primary_locale.locale if primary_locale else None,
                 "first_seen_at": app.first_seen_at.isoformat(),
                 "last_seen_at": app.last_seen_at.isoformat(),
+                "review_count": review_count,
+                "signals": signals,
             })
 
         return {
