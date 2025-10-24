@@ -1,0 +1,60 @@
+[tool.poetry]
+name = "appdiscovery"
+version = "0.1.0"
+description = "App discovery and intelligence platform for app stores"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{include = "apps"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+sqlmodel = "^0.0.21"
+sqlalchemy = "^2.0.0"
+pydantic = "^2.8.0"
+pydantic-settings = "^2.4.0"
+requests = "^2.32.0"
+typer = {extras = ["all"], version = "^0.12.0"}
+rich = "^13.7.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-cov = "^5.0.0"
+black = "^24.8.0"
+ruff = "^0.6.0"
+mypy = "^1.11.0"
+
+[tool.poetry.scripts]
+appdiscovery = "apps.ingest.cli:app"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["apps/*/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "smoke: smoke tests that hit real APIs (cached)",
+]
