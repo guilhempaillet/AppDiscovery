@@ -686,9 +686,31 @@
             const btn = document.getElementById('ai-insights-btn');
 
             btn.disabled = true;
-            btn.textContent = '⏳ Analyzing...';
+            btn.textContent = '⏳ Researching...';
 
-            container.innerHTML = '<div style="padding: 20px; text-align: center; color: #667eea;">Analyzing app with AI... This may take a few seconds.</div>';
+            // Show progress indicator
+            container.innerHTML = `
+                <div style="background: white; padding: 30px; border-radius: 15px; margin: 20px 0; text-align: center;">
+                    <div style="font-size: 18px; color: #667eea; margin-bottom: 20px;">
+                        <span class="spinner" style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+                        Conducting comprehensive research...
+                    </div>
+                    <div id="progress-stages" style="color: #999; font-size: 14px; line-height: 2;">
+                        <div>✓ Checking local data...</div>
+                        <div style="opacity: 0.5;">⏳ Searching web...</div>
+                        <div style="opacity: 0.3;">⏳ Checking app stores...</div>
+                        <div style="opacity: 0.3;">⏳ Scanning social media...</div>
+                        <div style="opacity: 0.3;">⏳ Deep research (if needed)...</div>
+                    </div>
+                    <div style="margin-top: 20px; color: #999; font-size: 12px;">This may take 30-60 seconds for accuracy</div>
+                </div>
+                <style>
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
+            `;
 
             try {
                 const response = await fetch(`${API_BASE}/apps/${appId}/ai-insights`);
@@ -727,6 +749,43 @@
                                 </ul>
                             </div>
 
+                            <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px;">
+                                <h4 style="color: #667eea; margin-bottom: 10px;">🌍 English Equivalent Check</h4>
+                                <div style="margin-bottom: 15px;">
+                                    ${insights.has_en_locale ?
+                                        '<span style="display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; background: #e74c3c; color: white;">Has English Locale</span>' :
+                                        insights.has_en_equivalent ?
+                                            '<span style="display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; background: #e74c3c; color: white;">English Version Exists</span>' :
+                                            '<span style="display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; background: #27ae60; color: white;">No English Version ✓</span>'
+                                    }
+                                    <span style="margin-left: 10px; color: #999;">Confidence: ${Math.round(insights.en_check_confidence * 100)}%</span>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong>Research Stages:</strong> ${insights.research_stages_run ? insights.research_stages_run.join(' → ') : 'None'}
+                                </div>
+                                ${insights.search_results && insights.search_results.length > 0 ? `
+                                    <div style="margin-top: 15px;">
+                                        <strong>Evidence Sources:</strong>
+                                        <ul style="margin: 10px 0; padding-left: 20px; font-size: 13px;">
+                                            ${insights.search_results.slice(0, 5).map(url => `<li><a href="${url}" target="_blank" style="color: #667eea; text-decoration: none;">${url}</a></li>`).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                                ${insights.research_evidence ? `
+                                    <details style="margin-top: 15px;">
+                                        <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View Research Details</summary>
+                                        <div style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 5px; font-size: 13px;">
+                                            ${Object.entries(insights.research_evidence).map(([stage, evidence]) => `
+                                                <div style="margin-bottom: 10px;">
+                                                    <strong>${stage}:</strong><br>
+                                                    <span style="color: #666;">${evidence.substring(0, 200)}${evidence.length > 200 ? '...' : ''}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </details>
+                                ` : ''}
+                            </div>
+
                             <div style="background: white; padding: 20px; border-radius: 10px;">
                                 <h4 style="color: #667eea; margin-bottom: 10px;">📊 Market Analysis</h4>
                                 <div style="margin-bottom: 10px;">
@@ -736,6 +795,10 @@
                                     </span>
                                 </div>
                                 <p style="color: #666; line-height: 1.6; white-space: pre-wrap;">${insights.market_insights}</p>
+                            </div>
+
+                            <div style="text-align: center; color: #999; font-size: 13px; margin-top: 20px;">
+                                Research completed in ${(insights.research_duration_ms / 1000).toFixed(1)}s
                             </div>
                         </div>
                     `;
