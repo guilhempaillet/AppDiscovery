@@ -57,6 +57,48 @@ MONETIZATION_PRIORS = {
     "default": (0.06, 0.40, 0.06),
 }
 
+# Saturated category rules: bucket -> {keywords, examples}
+SATURATED_RULES = {
+    "todo": {
+        "keywords": ["todo", "task", "pomodoro", "focus", "recordatorios", "tareas", "할일", "やること"],
+        "examples": [
+            {"name": "Microsoft To Do", "store": "apple", "link": "https://apps.apple.com/us/app/microsoft-to-do/id1212616790", "confidence": 0.9},
+            {"name": "Todoist", "store": "apple", "link": "https://apps.apple.com/us/app/todoist-to-do-list-calendar/id572688855", "confidence": 0.9},
+            {"name": "Any.do", "store": "apple", "link": "https://apps.apple.com/us/app/any-do-to-do-list-calendar/id497328576", "confidence": 0.85},
+        ]
+    },
+    "scanner_pdf_qr": {
+        "keywords": ["scan", "scanner", "pdf", "signature", "firma", "qr", "barcode", "código", "código de barras", "スキャナー", "스캐너"],
+        "examples": [
+            {"name": "Adobe Scan", "store": "apple", "link": "https://apps.apple.com/us/app/adobe-scan-pdf-scanner-ocr/id1199564834", "confidence": 0.95},
+            {"name": "CamScanner", "store": "apple", "link": "https://apps.apple.com/us/app/camscanner-pdf-scanner-app/id388627783", "confidence": 0.9},
+            {"name": "Scanner App", "store": "apple", "link": "https://apps.apple.com/us/app/scanner-app-scan-pdf-document/id595563753", "confidence": 0.85},
+        ]
+    },
+    "calorie": {
+        "keywords": ["calorie", "calor", "calorias", "diet", "dieta", "kcal", "nutrition", "nutrición", "카로리", "カロリー"],
+        "examples": [
+            {"name": "MyFitnessPal", "store": "apple", "link": "https://apps.apple.com/us/app/myfitnesspal-calorie-counter/id341232718", "confidence": 0.95},
+            {"name": "YAZIO", "store": "apple", "link": "https://apps.apple.com/us/app/yazio-ai-calorie-tracker/id946099227", "confidence": 0.9},
+            {"name": "Lose It!", "store": "apple", "link": "https://apps.apple.com/us/app/lose-it-calorie-counter/id297368629", "confidence": 0.85},
+        ]
+    },
+    "focus": {
+        "keywords": ["pomodoro", "focus", "forest", "study", "concentr", "enfoque", "estudiar", "집중", "フォーカス"],
+        "examples": [
+            {"name": "Forest", "store": "apple", "link": "https://apps.apple.com/us/app/forest-focus-for-productivity/id866450515", "confidence": 0.9},
+            {"name": "Focus To-Do", "store": "apple", "link": "https://apps.apple.com/us/app/focus-to-do-pomodoro-timer/id1258530160", "confidence": 0.85},
+        ]
+    },
+    "recipe": {
+        "keywords": ["recipe", "receta", "cook", "cocina", "レシピ", "요리"],
+        "examples": [
+            {"name": "Yummly", "store": "apple", "link": "https://apps.apple.com/us/app/yummly-recipes-cooking-tools/id589625334", "confidence": 0.85},
+            {"name": "Tasty", "store": "apple", "link": "https://apps.apple.com/us/app/tasty-recipes-cooking-videos/id1217456898", "confidence": 0.85},
+        ]
+    },
+}
+
 # In-memory caches
 _en_cache: Dict[int, Dict[str, Any]] = {}
 _monetization_cache: Dict[int, Dict[str, Any]] = {}
@@ -107,6 +149,88 @@ def _check_budget(app_id: int, budget_type: str, max_calls: int) -> bool:
 
     budget[budget_type] = budget.get(budget_type, 0) + 1
     return True
+
+
+# ============================================================================
+# DETERMINISTIC CHECKS (run before LLM to reduce "inconclusive")
+# ============================================================================
+
+def apple_lookup(track_id: str, country: str) -> Optional[Dict]:
+    """Call iTunes Search API to check if app exists in a given country."""
+    try:
+        url = f"https://itunes.apple.com/lookup?id={track_id}&country={country}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        logger.warning(f"iTunes lookup failed for {track_id} in {country}: {e}")
+    return None
+
+
+def apple_available_in_en_markets(track_id: str) -> Tuple[bool, List[str]]:
+    """Check if app is available in any English markets (US/GB/CA/AU).
+    Returns (is_available, list_of_successful_lookup_urls)."""
+    urls = []
+    for country in EN_MARKETS:
+        result = apple_lookup(track_id, country)
+        if result and result.get("resultCount", 0) > 0:
+            urls.append(f"https://itunes.apple.com/lookup?id={track_id}&country={country}")
+    return (len(urls) > 0, urls)
+
+
+def apple_supports_english(track_id: str) -> Tuple[bool, List[str]]:
+    """Check if app supports English language.
+    Returns (supports_en, list_of_lookup_urls)."""
+    result = apple_lookup(track_id, "US")
+    if not result or result.get("resultCount", 0) == 0:
+        return (False, [])
+
+    results = result.get("results", [])
+    if not results:
+        return (False, [])
+
+    app_data = results[0]
+    lang_codes = app_data.get("languageCodesISO2A", [])
+
+    if "EN" in lang_codes:
+        return (True, [f"https://itunes.apple.com/lookup?id={track_id}&country=US"])
+
+    return (False, [])
+
+
+def play_available_in_en_markets(package: str) -> Tuple[bool, List[str]]:
+    """Best-effort check if app is available in Play Store EN markets.
+    Returns (is_available, list_of_urls)."""
+    try:
+        url = f"https://play.google.com/store/apps/details?id={package}&hl=en&gl=US"
+        response = requests.get(url, timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        if response.status_code == 200 and ("<title>" in response.text or "og:title" in response.text):
+            return (True, [url])
+    except Exception as e:
+        logger.warning(f"Play Store check failed for {package}: {e}")
+
+    return (False, [])
+
+
+def is_saturated_utility(app_title: str, app_category: str) -> Tuple[bool, Optional[List[Dict]]]:
+    """Check if app falls into a saturated category with obvious EN equivalents.
+    Returns (is_saturated, canonical_en_equivalents_list)."""
+    title_lower = app_title.lower()
+    category_lower = (app_category or "").lower()
+
+    for bucket, rules in SATURATED_RULES.items():
+        keywords = rules["keywords"]
+
+        # Check if any keyword matches title or category
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            if keyword_lower in title_lower or keyword_lower in category_lower:
+                logger.info(f"Saturated category match: '{app_title}' → bucket '{bucket}' (keyword: '{keyword}')")
+                return (True, rules["examples"])
+
+    return (False, None)
 
 
 # ============================================================================
@@ -811,17 +935,79 @@ def analyze_app(app_id: int, refresh: bool = False) -> Dict[str, Any]:
         "reviews_sample": reviews_sample
     }
 
+    # =========================================================================
+    # DETERMINISTIC CHECKS (run BEFORE any LLM calls)
+    # =========================================================================
+
+    # Check cache first
+    en_result = _check_cache(_en_cache, app_id, refresh)
+
+    if not en_result:
+        logger.info(f"Running deterministic checks for app {app_id} ({title})")
+
+        # Rule 1: Check if same app has English presence
+        has_en_same_app = False
+        same_app_urls = []
+
+        # Determine store type
+        bundle_id = app_info.get("store_app_id", "")
+
+        # For Apple apps: check availability and language support
+        if bundle_id and len(bundle_id) < 20:  # Apple track IDs are short numeric
+            is_available, avail_urls = apple_available_in_en_markets(bundle_id)
+            supports_en, lang_urls = apple_supports_english(bundle_id)
+
+            if is_available or supports_en:
+                has_en_same_app = True
+                same_app_urls = list(set(avail_urls + lang_urls))
+                logger.info(f"Rule: Same-app EN detected for {title} (available={is_available}, supports_en={supports_en})")
+
+        # TODO: Add Google Play check when we have package names in the data model
+        # For now, Apple apps dominate our dataset
+
+        if has_en_same_app:
+            # Short-circuit: same app has English version
+            en_result = {
+                "has_en_locale": True,
+                "has_en_equivalent": True,
+                "en_equivalents": [],
+                "research_stage": "rule_same_app_en",
+                "research_confidence": 0.98,
+                "search_results": same_app_urls,
+                "research_updated_at": datetime.utcnow().isoformat()
+            }
+            _set_cache(_en_cache, app_id, en_result, EN_EQ_CACHE_TTL_SECONDS)
+            logger.info(f"Short-circuit: Same-app EN for {title}")
+
+        else:
+            # Rule 2: Check if saturated utility category
+            is_saturated, canonical_examples = is_saturated_utility(title, category or "")
+
+            if is_saturated:
+                # Short-circuit: saturated category with known EN equivalents
+                en_result = {
+                    "has_en_locale": False,
+                    "has_en_equivalent": True,
+                    "en_equivalents": canonical_examples or [],
+                    "research_stage": "rule_saturated_category",
+                    "research_confidence": 0.92,
+                    "search_results": [ex["link"] for ex in (canonical_examples or [])],
+                    "research_updated_at": datetime.utcnow().isoformat()
+                }
+                _set_cache(_en_cache, app_id, en_result, EN_EQ_CACHE_TTL_SECONDS)
+                logger.info(f"Short-circuit: Saturated category for {title}")
+
+            else:
+                # Rule 3: Run full LLM pipeline (existing logic)
+                logger.info(f"No deterministic match, running LLM pipeline for {title}")
+                en_result = _research_en_equivalent(app_info, app_id, settings.perplexity_api_key)
+                _set_cache(_en_cache, app_id, en_result, EN_EQ_CACHE_TTL_SECONDS)
+
     # Call existing Gemini analysis (keep for UI continuity)
     gemini_result = _analyze_with_gemini(app_info, settings.gemini_api_key)
 
     # Call existing market insights (keep for UI continuity)
     perplexity_result = _get_market_insights(app_info, settings.perplexity_api_key)
-
-    # NEW: English equivalent research
-    en_result = _check_cache(_en_cache, app_id, refresh)
-    if not en_result:
-        en_result = _research_en_equivalent(app_info, app_id, settings.perplexity_api_key)
-        _set_cache(_en_cache, app_id, en_result, EN_EQ_CACHE_TTL_SECONDS)
 
     # NEW: Hybrid MRR estimation
     mrr_result = _estimate_mrr(app_info, app_id, settings.perplexity_api_key, refresh)
