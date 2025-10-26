@@ -298,10 +298,10 @@ def get_app_signals(app_id: int, recompute: bool = Query(False)):
 
 
 @app.get("/apps/{app_id}/ai-insights")
-def get_ai_insights(app_id: int):
+def get_ai_insights(app_id: int, refresh: bool = Query(False, description="Bypass cache and refresh research")):
     """Get AI-powered insights for an app using Gemini and Perplexity."""
     try:
-        insights = analyze_app(app_id)
+        insights = analyze_app(app_id, refresh=refresh)
         return {
             "app_id": app_id,
             "insights": insights,
