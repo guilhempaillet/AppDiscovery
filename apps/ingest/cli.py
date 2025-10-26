@@ -4,6 +4,8 @@ Uses Typer for command-line interface.
 """
 import json
 import logging
+import random
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -39,17 +41,49 @@ def setup_logging(level: str = "INFO"):
 @app.command()
 def discover(
     store: str = typer.Option("apple", help="Store to search (apple only for now)"),
-    lang: str = typer.Option("es", help="Language code (e.g., es, ja, pt)"),
-    country: str = typer.Option("ES", help="Country code (e.g., ES, MX, JP)"),
-    q: str = typer.Option(..., help="Search query"),
-    limit: int = typer.Option(50, help="Max results per query"),
+    terms: str = typer.Option(
+        "presupuesto,gastos,finanzas personales,hábitos,rutina,tareas,dieta,recetas,estudiar,exámenes,facturas,escáner,firma PDF,traductor,recortador de fotos;"
+        "orçamento,despesas,finanças pessoais,hábitos,rotina,tarefas,dieta,receitas,estudar,provas,recibos,scanner,assinar PDF,tradutor,remover fundo;"
+        "家計簿,予算,習慣,ルーティン,タスク,食事管理,レシピ,勉強,試験対策,領収書,スキャナー,PDF 署名,翻訳,背景削除;"
+        "가계부,예산,습관,루틴,할일,식단,레시피,공부,시험,영수증,스캐너,PDF 서명,번역,배경 제거",
+        help="Semicolon-separated groups of comma-separated search terms (one group per language). "
+             "Covers high-yield categories: finance, habits, routines, tasks, diet, recipes, studying, "
+             "exams, receipts, scanning, PDF tools, translation, photo editing."
+    ),
+    countries: str = typer.Option(
+        "ES,MX,AR,CO;BR,PT;JP;KR",
+        help="Semicolon-separated groups of comma-separated country codes (aligned with languages)"
+    ),
+    languages: str = typer.Option(
+        "es;pt;ja;ko",
+        help="Semicolon-separated language codes (aligned with country groups)"
+    ),
+    per_term_limit: int = typer.Option(50, help="Max results per search term"),
+    max_total: int = typer.Option(600, help="Maximum total apps to discover (stops early if reached)"),
     log_level: str = typer.Option("INFO", help="Log level"),
 ):
     """
-    Discover apps by searching store and persist to database.
+    Discover copyable single-player utility apps across multiple non-English markets.
+
+    Searches for apps matching discovery rules:
+    - Single-player utility (no network effects, no real-time social)
+    - Low surface area (≤6 core features)
+    - Subscription-friendly or clear pricing
+    - Evidence of traction (recent reviews/updates)
+    - Low integration burden (no bank logins, KYC)
+    - Non-English target first
+    - Buildable in weeks
+
+    High-yield categories: life/home organization, health (non-diagnostic), learning/exams,
+    freelancer tools, personal admin, media micro-editing, PDF/file utilities, travel (lightweight),
+    pets/family, religion, hobbies.
+
+    Explicitly excludes: games, dating, social networks, banking, medical diagnosis, logistics,
+    marketplaces, UGC platforms.
 
     Example:
-        python -m apps.ingest.cli discover --store apple --lang es --country ES --q "gastos" --limit 50
+        python -m apps.ingest.cli discover --store apple --max_total 400
+        python -m apps.ingest.cli discover --store apple --terms "budget;orçamento" --countries "US;BR" --languages "en;pt"
     """
     setup_logging(log_level)
     logger = logging.getLogger(__name__)
@@ -61,105 +95,166 @@ def discover(
     # Initialize DB
     init_db()
 
-    # Search
-    console.print(f"[cyan]Searching {store} for '{q}' ({lang}-{country})...[/cyan]")
-    results = apple_search_apps(term=q, lang=lang, country=country, limit=limit)
+    # Parse semicolon-separated groups
+    term_groups = [group.split(',') for group in terms.split(';')]
+    country_groups = [group.split(',') for group in countries.split(';')]
+    language_list = languages.split(';')
 
-    if not results:
-        console.print("[yellow]No results found[/yellow]")
-        return
+    if len(term_groups) != len(country_groups) or len(term_groups) != len(language_list):
+        console.print(f"[red]Error: terms, countries, and languages must have same number of groups[/red]")
+        console.print(f"[dim]Got {len(term_groups)} term groups, {len(country_groups)} country groups, {len(language_list)} languages[/dim]")
+        raise typer.Exit(1)
 
-    console.print(f"[green]Found {len(results)} apps[/green]")
+    console.print(f"[cyan]Multi-market discovery: {len(term_groups)} language groups, up to {max_total} apps total[/cyan]")
 
-    # Persist to DB
+    # Track seen apps to avoid duplicates within this run
+    seen_app_ids = set()
+    total_apps = 0
+    new_apps = 0
+    updated_apps = 0
+    skipped_duplicates = 0
+
+    # Get or create store record once
     with get_session() as session:
-        # Ensure store exists
         store_record = session.exec(select(Store).where(Store.name == store)).first()
         if not store_record:
             store_record = Store(name=store, display_name="Apple App Store")
             session.add(store_record)
-            session.flush()
+            session.commit()
+        store_id = store_record.id
 
-        new_apps = 0
-        updated_apps = 0
+    # Triple-nested loop: language → country → term
+    for lang_idx, (lang, term_group, country_group) in enumerate(zip(language_list, term_groups, country_groups)):
+        console.print(f"[cyan]Language group {lang_idx+1}/{len(language_list)}: {lang} ({len(country_group)} countries, {len(term_group)} terms)[/cyan]")
 
-        for summary in results:
-            # Upsert app
-            app_record = session.exec(
-                select(App)
-                .where(App.store_id == store_record.id)
-                .where(App.store_app_id == summary.store_app_id)
-            ).first()
+        for country in country_group:
+            country = country.strip()
 
-            if not app_record:
-                app_record = App(
-                    store_id=store_record.id,
-                    store_app_id=summary.store_app_id,
-                    bundle_or_package_id=summary.bundle_or_package_id,
-                    developer=summary.developer,
-                    category=summary.category,
-                    icon_url=summary.icon_url,
-                )
-                session.add(app_record)
-                new_apps += 1
-            else:
-                app_record.last_seen_at = datetime.utcnow()
-                app_record.category = summary.category or app_record.category
-                app_record.icon_url = summary.icon_url or app_record.icon_url
-                updated_apps += 1
+            for term in term_group:
+                term = term.strip()
 
-            session.flush()
+                if total_apps >= max_total:
+                    console.print(f"[yellow]Reached max_total ({max_total}), stopping early[/yellow]")
+                    break
 
-            # Upsert app locale
-            locale_record = session.exec(
-                select(AppLocale)
-                .where(AppLocale.app_id == app_record.id)
-                .where(AppLocale.locale == summary.locale)
-            ).first()
+                console.print(f"[dim]Searching: '{term}' ({lang}-{country})...[/dim]")
 
-            if not locale_record:
-                locale_record = AppLocale(
-                    app_id=app_record.id,
-                    locale=summary.locale,
-                    title_raw=summary.title,
-                    desc_raw="",  # Will be filled by enrich
-                    price=summary.price,
-                    currency=summary.currency,
-                )
-                session.add(locale_record)
-            else:
-                locale_record.title_raw = summary.title
-                locale_record.price = summary.price
-                locale_record.currency = summary.currency
-                locale_record.updated_at = datetime.utcnow()
+                # Search
+                try:
+                    results = apple_search_apps(term=term, lang=lang, country=country, limit=per_term_limit)
+                except Exception as e:
+                    logger.warning(f"Search failed for '{term}' ({lang}-{country}): {e}")
+                    continue
 
-            # Create/update daily snapshot if rating data available
-            if summary.rating_count is not None:
-                today = datetime.utcnow().date()
-                snapshot = session.exec(
-                    select(DailySnapshot)
-                    .where(DailySnapshot.app_id == app_record.id)
-                    .where(DailySnapshot.date == today)
-                ).first()
+                if not results:
+                    continue
 
-                if not snapshot:
-                    snapshot = DailySnapshot(
-                        app_id=app_record.id,
-                        date=today,
-                        rating_total=summary.rating_count,
-                        rating_count=summary.rating_count,
-                        rating_avg=summary.rating_avg,
-                    )
-                    session.add(snapshot)
-                else:
-                    snapshot.rating_total = summary.rating_count
-                    snapshot.rating_count = summary.rating_count
-                    snapshot.rating_avg = summary.rating_avg
-                    snapshot.fetched_at = datetime.utcnow()
+                # Persist with deduplication
+                with get_session() as session:
+                    for summary in results:
+                        # Check if we've seen this app in this run
+                        app_key = f"{store_id}:{summary.store_app_id}"
+                        if app_key in seen_app_ids:
+                            skipped_duplicates += 1
+                            continue
 
-        session.commit()
+                        seen_app_ids.add(app_key)
 
-    console.print(f"[green]OK Persisted: {new_apps} new apps, {updated_apps} updated[/green]")
+                        # Check DB for existing app
+                        app_record = session.exec(
+                            select(App)
+                            .where(App.store_id == store_id)
+                            .where(App.store_app_id == summary.store_app_id)
+                        ).first()
+
+                        if not app_record:
+                            # New app: set first_seen_at
+                            app_record = App(
+                                store_id=store_id,
+                                store_app_id=summary.store_app_id,
+                                bundle_or_package_id=summary.bundle_or_package_id,
+                                developer=summary.developer,
+                                category=summary.category,
+                                icon_url=summary.icon_url,
+                                first_seen_at=datetime.utcnow(),
+                                last_seen_at=datetime.utcnow(),
+                            )
+                            session.add(app_record)
+                            new_apps += 1
+                            total_apps += 1
+                        else:
+                            # Existing app: only update last_seen_at and fill in missing fields
+                            app_record.last_seen_at = datetime.utcnow()
+                            app_record.category = summary.category or app_record.category
+                            if not app_record.icon_url:
+                                app_record.icon_url = summary.icon_url
+                            updated_apps += 1
+
+                        session.flush()
+
+                        # Upsert app locale
+                        locale_record = session.exec(
+                            select(AppLocale)
+                            .where(AppLocale.app_id == app_record.id)
+                            .where(AppLocale.locale == summary.locale)
+                        ).first()
+
+                        if not locale_record:
+                            locale_record = AppLocale(
+                                app_id=app_record.id,
+                                locale=summary.locale,
+                                title_raw=summary.title,
+                                desc_raw="",  # Will be filled by enrich
+                                price=summary.price,
+                                currency=summary.currency,
+                            )
+                            session.add(locale_record)
+                        else:
+                            locale_record.title_raw = summary.title
+                            locale_record.price = summary.price
+                            locale_record.currency = summary.currency
+                            locale_record.updated_at = datetime.utcnow()
+
+                        # Create/update daily snapshot if rating data available
+                        if summary.rating_count is not None:
+                            today = datetime.utcnow().date()
+                            snapshot = session.exec(
+                                select(DailySnapshot)
+                                .where(DailySnapshot.app_id == app_record.id)
+                                .where(DailySnapshot.date == today)
+                            ).first()
+
+                            if not snapshot:
+                                snapshot = DailySnapshot(
+                                    app_id=app_record.id,
+                                    date=today,
+                                    rating_total=summary.rating_count,
+                                    rating_count=summary.rating_count,
+                                    rating_avg=summary.rating_avg,
+                                )
+                                session.add(snapshot)
+                            else:
+                                snapshot.rating_total = summary.rating_count
+                                snapshot.rating_count = summary.rating_count
+                                snapshot.rating_avg = summary.rating_avg
+                                snapshot.fetched_at = datetime.utcnow()
+
+                        if total_apps >= max_total:
+                            break
+
+                    session.commit()
+
+                # Polite rate limiting: 150-250ms between requests
+                time.sleep(random.uniform(0.15, 0.25))
+
+                if total_apps >= max_total:
+                    break
+
+            if total_apps >= max_total:
+                break
+
+    console.print(f"[green]OK Discovery complete: {new_apps} new apps, {updated_apps} updated, {skipped_duplicates} duplicates skipped[/green]")
+    console.print(f"[green]Total unique apps discovered: {total_apps}[/green]")
 
 
 @app.command()

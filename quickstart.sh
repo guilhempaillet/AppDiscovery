@@ -29,14 +29,15 @@ python -m apps.ingest.cli init
 echo "✓ Database initialized"
 echo ""
 
-# Discover sample apps
-echo "🔍 Discovering sample apps..."
+# Discover copyable utility apps across multiple non-English markets
+echo "🔍 Discovering copyable utility apps across multiple markets..."
+echo "   Markets: ES, MX, AR, CO (Spanish), BR, PT (Portuguese), JP (Japanese), KR (Korean)"
+echo "   Categories: finance, habits, tasks, diet, recipes, studying, PDF tools, photo editing, and more"
+echo "   Searching for single-player utilities with clear pricing and recent traction..."
+echo "   Target: up to 400 unique apps"
 python -m apps.ingest.cli discover \
     --store apple \
-    --lang en \
-    --country US \
-    --q "budget" \
-    --limit 10
+    --max_total 400
 echo "✓ Discovered apps"
 echo ""
 
